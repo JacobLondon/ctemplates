@@ -14,20 +14,30 @@ struct Symbol {
 	char *name_tp; // int, long, ...
 };
 
+struct Marker {
+	char *begin;
+	size_t len;
+};
+
 static void usage(void);
 
 struct Symbol *symbol_new(char *tm, size_t tmlen, char *tp, size_t tplen);
 void symbol_free(void *sym);
-void symbol_print(void *sym);
+void symbol_print(void *sym, FILE *fp);
+
+struct Marker *marker_new(char *begin, size_t len);
+void marker_print(struct Marker *marker, FILE *fp);
 
 int save_symbol_definition(char *begin, struct parray *table);
 
 static char *program_name;
 static char *ifile;
 static struct parray *symbol_table;
+static struct parray *marker_list;
 
 int main(int argc, char **argv)
 {
+	struct Marker *marker;
 	size_t len;
 	char *text;
 	char *p;
@@ -52,17 +62,22 @@ int main(int argc, char **argv)
 
 	cts_strcatf(&ofile, "%s.c", ifile);
 	symbol_table = parray_new(symbol_free);
+	marker_list = parray_new(free);
 
 	// go thru file
-	while (*p) {
+	while (p < text + len) {
 		match = strchr(p, '@');
 		if (!match) {
 			break;
 		}
+
+		marker = marker_new(p, match - p);
+		parray_push(marker_list, marker);
+
 		p = match;
 
-		fprintf(stdout, "%.*s", p - mark, mark);
-		fflush(stdout);
+		/*fprintf(stdout, "%.*s", p - mark, mark);
+		fflush(stdout);*/
 
 		rv = save_symbol_definition(p, symbol_table);
 		if (rv < 0) {
@@ -70,21 +85,36 @@ int main(int argc, char **argv)
 			fflush(stderr);
 			exit(3);
 		}
-		// not a typedef but a replacement!
+		// not a typedef but a replacement! Save the typename
 		else if (rv == 0) {
-			p++;
+			size_t tlen = 0;
+			while (*p && !isspace(*p)) {
+				tlen++;
+				p++;
+			}
+			marker = marker_new(match, tlen);
+			parray_push(marker_list, marker);
 		}
 		else {
 			mark = p;
-			p += rv;
+			p += rv + 1; // pass length + ';'
 		}
 	}
-	fprintf(stdout, "%.*s", p - mark, mark);
-	fflush(stdout);
+	marker = marker_new(p, len - (p - text));
+	parray_push(marker_list, marker);
 
-	/*for (int i = 0; i < symbol_table->size; i++) {
-		symbol_print(symbol_table->buf[i]);
-	}*/
+	// go through the file for each template type
+	for (size_t i = 0; i < symbol_table->size; i++) {
+		for (size_t j = 0; j < marker_list->size; j++) {
+			if (((struct Marker *)marker_list->buf[j])->begin[0] == '@') {
+				fprintf(stdout, "%s", ((struct Symbol *)symbol_table->buf[i])->name_tp);
+				fflush(stdout);
+			}
+			else {
+				marker_print(marker_list->buf[j], stdout);
+			}
+		}
+	}
 
 	return 0;
 }
@@ -127,14 +157,34 @@ void symbol_free(void *sym)
 	free(symbol);
 }
 
-void symbol_print(void *sym)
+void symbol_print(void *sym, FILE *fp)
 {
 	struct Symbol *symbol = sym;
-
+	assert(fp);
 	assert(sym);
 
-	fprintf(stdout, "%s: %s,\n", symbol->name_tm, symbol->name_tp);
-	fflush(stdout);
+	fprintf(fp, "%s: %s,\n", symbol->name_tm, symbol->name_tp);
+	fflush(fp);
+}
+
+struct Marker *marker_new(char *begin, size_t len)
+{
+	struct Marker *marker;
+
+	assert(begin);
+
+	marker = malloc(sizeof(*marker));
+	assert(marker);
+	marker->begin = begin;
+	marker->len = len;
+	return marker;
+}
+
+void marker_print(struct Marker *marker, FILE *fp)
+{
+	assert(marker);
+	fprintf(fp, "%.*s", marker->len, marker->begin);
+	fflush(fp);
 }
 
 /**

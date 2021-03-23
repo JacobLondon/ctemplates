@@ -2,17 +2,15 @@
 @typedef T int;
 @typedef T long;
 @typedef T unsigned;
-@typedef U size_t;
-@typedef V float;
 
-struct test {
+struct test_@T {
 	@T a;
-	@T b;
+	@U b;
 	@T c;
 	@T d;
 }
 
-void test_init(T *a)
+void test_@T init(@T *a)
 {
 
 }
